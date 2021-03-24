@@ -1,0 +1,16 @@
+apiVersion: helm.fluxcd.io/v1
+kind: HelmRelease
+metadata:
+  name: petclinic
+  namespace: default
+  annotations:
+    fluxcd.io/automated: "true"
+    filter.fluxcd.io/chart-image: "glob:*"
+spec:
+  releaseName: app
+  forceUpgrade: true
+  chart:
+    git: https://github.com/acnavaorg/prototype-tomcat-aks-reference
+    ref: master
+    path: charts/petclinic
+  values:

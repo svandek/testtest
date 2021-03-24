@@ -1,0 +1,63 @@
+name: Build and deploy Java App
+on: 
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Define env name     
+        required: true
+        default: dev
+      appName:
+        description: Define App name     
+        required: true
+        default: tomcattest987
+
+env:
+  JAVA_VERSION: 1.8
+  AZURE_WEBAPP_NAME: ${{github.event.inputs.appName}}  # set this to your application's name
+  AZURE_WEBAPP_PACKAGE_PATH: ${{github.workspace }} # set this to the path to your web app project
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    steps:
+
+      # standard GitHub Action
+      - uses: actions/checkout@master
+
+      # Set up the right JDK (project dependent)
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # cache dependencies
+      - uses: actions/cache@v1
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-     
+
+      # Package the application
+      - name: Package application
+        run: |
+          mvn clean install --file pom.xml -Dmaven.test.skip=true
+
+      # Store the application artifact
+      - name: Archive WAR package
+        uses: actions/upload-artifact@v2
+        with:
+          name: archive-war
+          path: |
+            target/*.war
+
+      # Log into Azure
+      - uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }} 
+
+      - name: 'Deploy to Azure WebApp'
+        uses: azure/webapps-deploy@v2
+        with: 
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: '${{ env.AZURE_WEBAPP_PACKAGE_PATH }}/target/*.war'

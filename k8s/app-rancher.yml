@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      name: app
+      labels:
+        app: app
+    spec:
+      containers:
+        - image: airlinedemoreg.azurecr.io/app:latest
+          imagePullPolicy: IfNotPresent
+          name: app
+          ports:
+            - containerPort: 8080
+      imagePullSecrets:
+        - name: airlinedemoreg.azurecr.io-pull-secret
+#---
+#apiVersion: v1
+#kind: Service
+#metadata:
+#  name: app
+#spec:
+#  selector:
+#    app: app
+#  type: ClusterIP
+#  ports:
+#    - port: 8080
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: app
+spec:
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ . }}
+            backend:
+              serviceName: {{ $fullName }}
+              servicePort: {{ $svcPort }}
+          {{- end }}
+    {{- end }}
+  {{- end }}

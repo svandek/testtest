@@ -1,0 +1,9 @@
+[project]
+id = "corp.acme.petclinic-tomcat"
+name = "App on Tomcat"
+version = "1.0.0"
+
+[build]
+include = [
+    "target/petclinic.war"
+]

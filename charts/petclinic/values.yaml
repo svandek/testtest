@@ -1,0 +1,22 @@
+replicaCount: 1
+
+image:
+  repository: airlinedemoreg.azurecr.io/petclinic
+
+imagePullSecrets:
+  - name: airlinedemoreg.azurecr.io-pull-secret
+
+service:
+  enabled: true
+  type: LoadBalancer
+  port: 80
+
+env:
+  - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+    value: "InstrumentationKey=206eb455-1395-4a15-8199-28057b53dc92;IngestionEndpoint=https://westeurope-4.in.applicationinsights.azure.com/"
+
+ingress:
+  enabled: false
+  hosts:
+    - host: chart-example.local
+      paths: []

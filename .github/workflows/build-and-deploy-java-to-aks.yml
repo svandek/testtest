@@ -1,0 +1,135 @@
+name: Build and deploy Java Container
+on: 
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Define env name     
+        required: true
+        default: dev
+      subscriptionId:
+        description: Define Subscription ID    
+        required: true
+        default: 357e7522-d1ad-433c-9545-7d8b8d72d61a
+      regionLocation:
+        description: Define region location     
+        required: true
+        default: westeurope
+      resourceGroupName:
+        description: Define resource group name     
+        required: true
+        default: webapp-lz
+
+env:
+  JAVA_VERSION: 1.8
+  ACR_NAME: airlinedemoreg
+  ACR_ADDR: airlinedemoreg.azurecr.io
+  NAMESPACE: default
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    steps:
+
+      # standard GitHub Action
+      - uses: actions/checkout@master
+
+      # Set up the right JDK (project dependent)
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # cache dependencies
+      - uses: actions/cache@v1
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      # Build, unit and integration test
+      - name: Build and test
+        run: |
+          mvn test --file pom.xml
+
+      # Package the application
+      - name: Package application
+        run: |
+          mvn clean install --file pom.xml -P PostgreSQLAzure -Dmaven.test.skip=true
+
+      # Install pack CLI
+      - name: Install buildpack
+        run: |
+          (curl -sSL "https://github.com/buildpacks/pack/releases/download/v0.16.0/pack-v0.16.0-linux.tgz" | sudo tar -C /usr/local/bin/ --no-same-owner -xzv pack)
+
+      # build image
+      - name: Run buildpack
+        run: |
+          pack build ${{ env.ACR_ADDR }}/petclinic:${{ github.sha }} --builder paketobuildpacks/builder:base --volume "$(pwd)/buildpacks/binding:/platform/bindings/application-insights" --path ./target/petclinic.war
+
+      # Login to ACR with the secret credentials
+      - name: Login to ACR
+        uses: Azure/docker-login@v1
+        with:
+          login-server: ${{ env.ACR_ADDR }}
+          username: ${{ env.ACR_NAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # Tag and push container image
+      - name: Tag and push container image
+        run: |
+          docker tag ${{ env.ACR_ADDR }}/petclinic:${{ github.sha }} ${{ env.ACR_ADDR }}/petclinic:latest
+          docker tag ${{ env.ACR_ADDR }}/petclinic:${{ github.sha }} ${{ env.ACR_ADDR }}/petclinic:1.0.0
+          docker push ${{ env.ACR_ADDR }}/petclinic:${{ github.sha }}
+          docker push ${{ env.ACR_ADDR }}/petclinic:latest
+          docker push ${{ env.ACR_ADDR }}/petclinic:1.0.0
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-package
+    steps:
+
+      # standard GitHub Action
+      - uses: actions/checkout@master
+
+      # set the context to point to the right cluster (AKS)
+      - name: Set AKS cluster
+        uses: azure/aks-set-context@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: k8s-lz
+          resource-group: k8s-landingzone
+        id: setcontext
+
+      # Create the pull secret needed to access the repository
+      - name: Create pull secret
+        uses: Azure/k8s-create-secret@v1
+        with:
+          namespace: ${{ env.NAMESPACE  }}
+          container-registry-url: ${{ env.ACR_ADDR }}
+          container-registry-username: ${{ env.ACR_NAME }}
+          container-registry-password: ${{ secrets.ACR_PASSWORD }}
+          secret-name: airlinedemoreg.azurecr.io-pull-secret
+        id: create-secret
+
+      - uses: azure/setup-helm@v1
+        with:
+          version: 'latest' # default is latest stable
+        id: install-helm
+
+      - uses: Azure/k8s-bake@v1
+        with:
+          renderEngine: helm
+          helmChart: ./charts/petclinic/
+          overrideFiles: ./charts/petclinic/values.yaml
+          helm-version: latest
+          releaseName: test
+        id: bake
+
+      - uses: Azure/k8s-deploy@v1.2
+        with:
+          manifests: ${{ steps.bake.outputs.manifestsBundle }}
+          images: |
+            ${{ env.ACR_ADDR }}/petclinic:${{ github.sha }}
+          imagepullsecrets: |
+            airlinedemoreg.azurecr.io-pull-secret

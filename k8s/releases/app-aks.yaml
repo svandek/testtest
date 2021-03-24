@@ -1,0 +1,24 @@
+apiVersion: helm.fluxcd.io/v1
+kind: HelmRelease
+metadata:
+  name: app-aks
+  namespace: default
+  annotations:
+    fluxcd.io/automated: "true"
+    filter.fluxcd.io/chart-image: "glob:*"
+spec:
+  releaseName: app-aks
+  forceUpgrade: true
+  chart:
+    git: https://github.com/acnavaorg/prototype-tomcat-aks-reference
+    ref: master
+    path: charts/app
+  values:
+    image:
+      repository: airlinedemoreg.azurecr.io/app
+      tag: "c9532be91553c0a446e5d6ee359abadd55d2649c"
+    imagePullSecrets:
+      - name: airlinedemoreg.azurecr.io-pull-secret
+    service:
+      type: LoadBalancer
+      port: 8080
